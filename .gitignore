@@ -1,0 +1,30 @@
+# Local/editor files
+.codex
+.agents/
+.vscode/
+.tmp_preview/
+
+# Notes/docs not meant for the public repo
+practice_plan.md
+match_room_architecture.md
+杂谈/
+
+# Runtime data/logs
+*.log
+*.pid
+
+# Unity generated folders
+UnityClient_FrameInput/Library/
+UnityClient_FrameInput/Temp/
+UnityClient_FrameInput/Obj/
+UnityClient_FrameInput/Build/
+UnityClient_FrameInput/Builds/
+UnityClient_FrameInput/Logs/
+UnityClient_FrameInput/UserSettings/
+
+# Nested VCS metadata
+skynet/.git/
+
+# Native build intermediates
+*.o
+*.d

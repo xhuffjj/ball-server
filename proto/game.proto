@@ -1,0 +1,452 @@
+syntax="proto3";
+package game;
+
+message Food{
+    int32 id=1;
+    float x=2;
+    float y=3;
+}
+
+message LoginFirstReq{
+    string playerid=1;
+    bytes A=2;
+}
+
+message LoginFirstRes{
+    int32 code=1;
+    string msg=2;
+    bytes salt=3;
+    bytes B=4;
+}
+
+message LoginSecondReq{
+    string playerid=1;
+    bytes M1=2;
+}
+
+message LoginSecondRes{
+    int32 code=1;
+    string msg=2;
+    bytes M2=3;
+    string token=4;
+}
+
+
+message RegisterReq{
+    string playerid=1;
+    bytes salt=2;
+    bytes verifier=3;
+}
+
+message RegisterRes{
+    int32 code=1;
+    string msg=2;
+}
+
+message KickNotify{
+    string msg=1;
+}
+
+
+message EnterReq{
+
+}
+
+message EnterRes{
+    int32 code=1;
+    string msg=2;
+
+    string battle_host=3;// 下发战斗服ip和端口
+    int32 battle_port=4;
+    uint32 battle_conv=5;//kcp会话号
+    string battle_token=6;//战斗服令牌
+}
+
+
+message LeaveReq{
+}
+
+message LeaveRes{
+    int32 code=1;
+    string msg=2;
+}
+
+message BattleAuthReq{//战斗服务认证请求
+    string token=1;
+}
+
+message BattleAuthRes{
+    int32 code = 1;
+    string msg = 2;
+    uint32 ready_seq=3;//客户端第三次握手必须带着这个证明已经收到服务器的第二次握手，这是标准三次握手语义
+}
+
+message BattleReadyAckReq{
+    uint32 ready_seq=1;
+}
+
+
+
+//cellinfo不再带冲量了，对于预测，只用于纠正客户端的球位置，不改冲量
+message CellInfo{
+    int32 cell_id=1;
+    float x=2;
+    float y=3;
+    float size=4;
+    int32 playerid=5;
+    int32 protected_timer = 6;
+}
+//SporeInfo不再带速度了，对于预测，只用于纠正客户端的孢子位置，不改速度
+message SporeInfo{
+    int32 spore_id=1;
+    float x=2;
+    float y=3;
+}
+
+message EnterNotify{
+    int32 playerid=1;
+}
+
+message LeaveNotify{
+    int32 playerid=1;
+}
+
+message InputFrameReq {
+    int32 input_seq = 1;
+    float target_x = 2;//目标点
+    float target_y = 3;
+    bool moving=4;
+    bool split = 5;
+    bool spit = 6;
+}
+
+message SelfNewCell{
+    int32 cell_id=1;
+    //标识newcell是某个玩家某次指令某个球分裂出的子球
+    int32 parent_cell_id=2;
+    int32 playerid=3;
+    int32 action_seq=4;
+    float x = 5;
+    float y = 6;
+    float size = 7;
+    float boost_vx = 8;//用于客户端替换猜测的临时冲量
+    float boost_vy = 9;
+}
+
+message SelfNewSporeInfo{
+    int32 spore_id=1;
+    float x=2;
+    float y=3;
+    float vx=4;//用于客户端替换猜测的临时初速度
+    float vy=5;
+    //标识newspore是某个玩家某次指令某个球吐出的孢子
+    int32 owner_playerid=6;
+    int32 action_seq = 7;
+    int32 source_cell_id = 8;
+}
+
+//一帧的增量
+message FrameUpdate{
+    repeated CellInfo cells=1;//所有存活小球的状态,包含了新进入玩家的小球
+    repeated Food new_foods=2;//新增食物
+    repeated SelfNewSporeInfo new_spores=3;//自己的新增孢子
+    repeated int32 eaten_food_ids=4;
+    int32 tick=5;//服务器帧号
+    repeated int32 dead_playerids=6;//死亡玩家id
+    repeated SelfNewCell new_cells=7;//自己的新增的分裂的球
+    repeated SporeInfo spores = 8;//孢子快照
+    int32 ack=9;//客户端指令确认号，客户端收到后估算指令生效时间
+}
+//场景快照
+message SceneSnapshot{
+    repeated CellInfo cells=1;
+    repeated SporeInfo spores=2;
+    repeated Food foods=3;
+    int32 tick=4;//服务器帧号
+}
+
+message AchieveInfo{
+    int32 achieve_id=1;
+    int32 progress=2;//进度
+    int32 is_done=3;
+    string claim_time=4;//领取时间
+}
+
+message AchieveListReq{}
+
+message AchieveListRes{
+    repeated AchieveInfo achieves=1;
+}
+
+message AchieveClaimReq{
+    int32 achieve_id=1;
+}
+
+message AchieveClaimRes{
+    int32 code=1;
+    string msg=2;
+}
+
+message AchieveNotify{
+    AchieveInfo achieveinfo=1;
+}
+
+
+//测试用
+message WorkReq{}
+message WorkRes{
+    int32 coin=1;
+}
+
+//物品
+message ItemInfo{
+    int32 item_id=1;
+    int32 count=2;
+}
+
+message BagListReq{}
+message BagListRes{
+    repeated ItemInfo items=1;
+}
+
+message UseItemReq{
+    int32 item_id=1;
+    int32 count=2;
+}
+message UseItemRes{
+    int32 code=1;
+    string msg=2;
+}
+
+message AttachInfo{
+    int32 id=1;
+    int32 item_id=2;
+    int32 count=3;
+    int32 is_claimed=4;
+}
+
+message MailBrief{
+    int32 mail_id=1;
+    int32 sender_id=2;
+    string title=3;
+    int32 is_read=4;
+    int32 attach_num=5;
+    string expire_time=6;
+}
+
+message MailDetail{
+    int32 mail_id=1;
+    int32 sender_id=2;
+    string title=3;
+    string content=4;
+    int32 is_read=5;
+    string create_time=6;
+    string expire_time=7;
+    repeated AttachInfo attachments=8;
+}
+
+message MailListReq{}
+message MailListRes{
+    repeated MailBrief mails=1;
+}
+
+message MailReadReq{
+    int32 mail_id=1;
+}
+message MailReadRes{
+    int32 code=1;
+    string msg=2;
+    MailDetail detail=3;
+}
+
+message MailClaimReq{
+    int32 mail_id=1;
+}
+
+message MailClaimRes{
+    int32 code=1;
+    string msg=2;
+}
+
+message MailDeleteReq{
+    int32 mail_id=1;
+}
+
+message MailDeleteRes{
+    int32 code=1;
+    string msg=2;
+}
+
+message MailNotify{
+    MailBrief mail=1;
+}
+
+message FriendBrief{
+    int32 friendid=1;
+    int32 status=2;//0-待确认，1-好友
+    int32 is_online=3;//0-不在线
+}
+
+message PublicBaseInfo{
+    int32 playerid=1;
+    int32 level=3;
+    int32 vip_level=5;
+    bool is_online=6;
+    bool in_scene=7;
+}
+
+message FriendInfoReq{
+    int32 friendid=1;
+}
+message FriendInfoRes{
+    int32 code=1;
+    string msg=2;
+    PublicBaseInfo info=3;
+}
+
+//好友列表
+message FriendListReq{
+
+}
+message FriendListRes{
+    repeated FriendBrief friends=1;
+}
+
+//好友申请列表
+message FriendPendingReq{
+
+}
+message FriendPendingRes{
+    repeated FriendBrief friends=1;
+}
+
+message FriendAddReq{
+    int32 target_id=1;
+}
+message FriendAddRes{
+    int32 code=1;
+    string msg=2;
+}
+
+message FriendAcceptReq{
+    int32 target_id=1;
+}
+message FriendAcceptRes{
+    int32 code=1;
+    string msg=2;
+}
+
+message FriendRejectReq{
+    int32 target_id=1;
+}
+message FriendRejectRes{
+    int32 code=1;
+    string msg=2;
+}
+
+
+message FriendDeleteReq{
+    int32 target_id=1;
+}
+message FriendDeleteRes{
+    int32 code=1;
+    string msg=2;
+}
+
+message BaseInfoReq{
+
+}
+
+message BaseInfoRes{
+    int32 coin = 1;
+    int32 level = 2;
+    int32 vip_level = 3;
+    int32 exp = 4;
+    int32 playerid=5;
+    int32 last_login_time=6;
+    int32 rank_score = 7;
+}
+
+message ReconnectReq{
+    int32 playerid=1;
+    string token=2;
+    int32 last_ack=3;
+}
+message ReconnectRes{
+    int32 code=1;
+}
+
+message JoinMatchReq{
+    int32 mode_id=1;
+}
+
+message JoinMatchRes{
+    int32 code = 1;
+    string msg = 2;
+}
+
+message CancelMatchReq{
+
+}
+
+message CancelMatchRes{
+    int32 code = 1;
+    string msg = 2;
+}
+
+//查询是否位于匹配状态，一般情况用不到
+message MatchStatusReq{
+
+}
+
+message MatchStatusRes{
+     int32 code = 1;
+    string msg = 2;
+    int32 state = 3;      // 0 idle 1 matching 2 room_allocating 3 room_preparing 4 running
+    int32 mode_id = 4;
+}
+
+
+message MatchFoundNotify{
+    repeated int32 playerids = 1;
+}
+
+//准备进入战斗
+message PrepareReq{
+
+}
+
+message PrepareRes{
+    int32 code = 1;
+    string msg = 2;
+}
+
+
+
+message RoomPlayerState{
+    int32 playerid = 1;
+    bool is_prepared = 2;
+}
+
+message RoomPrepareNotify{
+    repeated RoomPlayerState players=1;
+}
+//全部玩家准备好后，room向战斗网关申请创建会话，返回会话信息
+message BattleConnectNotify{
+    string battle_host = 1;// 下发战斗服ip和端口
+    int32 battle_port = 2;
+    uint32 battle_conv = 3;//kcp会话号
+    string battle_token = 4;//战斗服令牌
+}
+//房间解散通知
+message RoomDismissNotify{
+    string reason = 1;
+}
+
+message BattleResultNotify{//结算信息
+    int32 rank = 1;//名次
+    int32 weight_score = 2;//体重
+    int32 score_delta = 3;//增加的段位分
+    int32 coin = 4;//增加的金币
+    int32 exp = 5;//增加的经验
+}

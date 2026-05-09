@@ -1,0 +1,11 @@
+通过hotfixmgr节点的debugconsole
+调用热更的函数
+支持热更新agent的各个模块的所有函数和配置文件
+call hotfixmgr的id "hotfix_agent_config", "item_config"
+call hotfixmgr的id "hotfix_agent_module", "bag", false
+call hotfixmgr的id "hotfix_agent_module", "bag", true
+
+要热更的配置文件最好只被一个模块引用
+否则不能通过热更模块的方式热更配置文件
+不要把配置文件里面的值保存到模块中，
+否则原地替换热更配置文件的方式失效
