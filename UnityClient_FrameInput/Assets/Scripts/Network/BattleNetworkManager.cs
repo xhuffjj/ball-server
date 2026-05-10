@@ -44,7 +44,7 @@ public class BattleNetworkManager : MonoBehaviour
     private const int KcpFastResend = 2;
     private const int KcpMinRto = 10;
 
-    private const float ActiveNoPacketTimeoutSeconds = 1.0f;
+    private const float ActiveNoPacketTimeoutSeconds = 6.0f;
     private const float HandshakeRetrySeconds = 1.0f;
     private const float DebugSilenceSeconds = 10.0f;
 
@@ -311,6 +311,35 @@ public class BattleNetworkManager : MonoBehaviour
         });
     }
 
+    private bool RetryHandshakeOnCurrentTransport(string reason)
+    {
+        if (!_hasSessionContext)
+        {
+            return false;
+        }
+
+        if (_socket == null || _kcp == null)
+        {
+            return StartHandshake(reason);
+        }
+
+        _lastHandshakeAttemptAt = Time.realtimeSinceStartup;
+
+        LogTrace("kcp_handshake", new TracePayload
+        {
+            message = reason,
+            state = _state.ToString(),
+            host = _battleHost,
+            port = _battlePort,
+            conv = _battleConv
+        });
+
+        return SendMessage("battle_auth", new BattleAuthReq
+        {
+            Token = _battleToken
+        });
+    }
+
     private void TryReconnectByHandshake()
     {
         if (IsDebugTransportSuppressed())
@@ -343,7 +372,7 @@ public class BattleNetworkManager : MonoBehaviour
                 return;
             }
 
-            StartHandshake(_hasEverReceivedSnapshot ? "reconnect retry" : "initial retry");
+            RetryHandshakeOnCurrentTransport(_hasEverReceivedSnapshot ? "reconnect retry" : "initial retry");
         }
     }
 
