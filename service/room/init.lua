@@ -136,7 +136,7 @@ local function clear_player_state(playerid)
     rds:del(player_key(playerid))
 end
 
---设置redis中在本房间玩家的状态为running
+--设置redis中仍然在本房间玩家的状态为running
 local function set_players_running()
     return player_state_lock(function()
         for _, rp in pairs(players) do
@@ -224,7 +224,7 @@ local function inroom_player_count()
     end
     return n
 end
---选择一个战斗网关，轮询
+--随机选择一个战斗网关
 local function pick_battle_gateway()
     local room_node = skynet.getenv("node")
     local cfg = runconfig[room_node].battle_gateway or {}
@@ -494,16 +494,15 @@ local function mark_player_leaveroom(playerid, reason)
     free_player_battle_session(p)
     --通知scene踢掉该玩家
     pcall(skynet.call, scene_addr, "lua", "kick_player", playerid)
-    --确保回来后房间还是running状态，避免重复结算
-    if room_state == ROOM_STATE.RUNNING and inroom_player_count() <= 1 then
+    if inroom_player_count() <= 1 then
         finish_room(reason)
     end
     return true
 end
 
---分配会话期间用协程锁保护，不处理leave的remove_preparing_player，leave会释放会话导致并发问题
+--分配会话和加入场景期间用协程锁保护，不处理leave的remove_preparing_player，leave会释放会话或者从场景踢掉玩家导致并发问题
 --另外abort_room也会释放会话，但是在这个阶段本地的abort_room只有remove_preparing_player里面的可能执行，这个用协程锁串行了
---外部的abort_room：match的分配取消时才会调用。
+--外部的abort_room：match的分配取消时会调用。
 --这时候玩家的状态不会被转移到room_preparing，
 --所以，agent那边不会转发准备消息，room这边不会进入WAIT_BATTLE_READY
 --另外两个就是roommgr 预热room失败时会abortroom，，处于初始化失败阶段，也不会进入WAIT_BATTLE_READY
@@ -683,9 +682,7 @@ function s.resp.init_room(source, room_id, player_list, arg_alloc_version)
         abort_room("有玩家未准备")
     end)
 
-    return {
-        scene_addr = scene_addr,
-    }
+    return true
 end
 
 --玩家准备
@@ -775,7 +772,7 @@ function s.resp.leave(source, playerid, reason)
     end
     return false
 end
-
+--外部如果要调用abort_room，必须负责处理玩家的状态
 function s.resp.abort_room(source, reason)
     return abort_room_without_clear_state(reason or "room abort")
 end

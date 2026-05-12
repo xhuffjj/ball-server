@@ -67,7 +67,7 @@ function s.client.join_match(msg)
     if not ok then
         return { "join_match", code = 1, msg = err or "匹配失败" }
     end
-    return { "join_match", code = 0, msg = "匹配成功" }
+    return { "join_match", code = 0, msg = "匹配中" }
 end
 
 --客户端取消匹配

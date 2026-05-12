@@ -185,7 +185,7 @@ function s.resp.create_room(source, player_list, mode_id, alloc_version)
         return false
     end
 
-    local ok, room_info = pcall(
+    local ok = pcall(
         s.call,
         entry.room_node,
         entry.room,
@@ -194,7 +194,7 @@ function s.resp.create_room(source, player_list, mode_id, alloc_version)
         player_list,
         alloc_version
     )
-    if not ok or not room_info or not room_info.scene_addr then
+    if not ok then
         --去掉失败房间
         remove_pool_room(entry)
         pcall(s.call, entry.room_node, entry.room, "abort_room", "init_room failed")
@@ -210,7 +210,7 @@ function s.resp.create_room(source, player_list, mode_id, alloc_version)
         room_id = entry.room_id,
         room_node = entry.room_node,
         room = entry.room,
-        scene_addr = room_info.scene_addr,
+        scene_addr = entry.scene_addr,
     }
 end
 --room主动退出时通知池子清理本room记录

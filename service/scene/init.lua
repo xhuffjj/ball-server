@@ -333,7 +333,7 @@ function s.resp.battle_resync(source,playerid,conv)
     return true
 end
 
---玩家离开，小球进入删除队列
+--玩家离开，玩家进入删除队列
 function s.resp.kick_player(source, playerid)
     if pending_enters[playerid] then
         pending_enters[playerid] = nil

@@ -119,11 +119,6 @@ end
 -------------------------------------服务在线时，供其他服务调用的接口------------------------------------------------
 --返回玩家的公开信息
 function s.resp.get_info()
-    --这里的只要is_kicked为true就认定为下线
-    --绝大多数情况，agentmgr做出下线裁决导致s.is_kick为ture之前，agentmgr就会设置状态为登出
-    --从而向agentmgr时查询在线情况时就会返回离线，到不了这里
-    --不过万一agentmgr为GAME时被查询在线状态，然后agentmgr急速完成下线裁决，agent这里急速设置is_kick，然后才收到基础信息的查询
-    --那么为了应对这种情况，not is_kicked的判断便是必要的
     return public_baseinfo(
         s.id,
         s.data.base_info.level,
@@ -131,11 +126,6 @@ function s.resp.get_info()
         not s.is_kicked,
         s.sname and true or false
     )
-end
-
---供其他服务用,本服务在线时，查询本服务的好友数和被申请数
-function s.resp.friends_num()
-    return map_size(s.data.friends), map_size(s.data.friends_pending)
 end
 
 --服务间接口，其他服务调用，通知本服务好友事件来临
@@ -168,7 +158,7 @@ local function query_online_public_info(friendid)
     if not player then
         return nil
     end
-
+    --这里返回后玩家服务可能下线或者下线中，下线会isok==false，下线中info==nil
     local isok, info = pcall(s.call, player.node, player.agent, "get_info")
     if isok and info then
         return info
@@ -227,38 +217,6 @@ end
 
 ---------------数据库部分：
 
---数据库层：持久化双向好友记录
-function repo.replace_bidirectional(target_id, from_id)
-    local safe_target = s.db.quote_sql_str(target_id)
-    local safe_from = s.db.quote_sql_str(from_id)
-    local sql = string.format(
-        "replace into friend (friendid,playerid,status) values (%s,%s,1),(%s,%s,1)",
-        safe_target,
-        safe_from,
-        safe_from,
-        safe_target
-    )
-    local res = s.db:query(sql)
-    if db_failed(res) then
-        return false, "添加失败"
-    end
-    return true
-end
-
---数据库层：查询玩家是否存在
-function repo.target_exist(playerid)
-    local safe_playerid = s.db.quote_sql_str(playerid)
-    local sql = string.format("select playerid from role_message where playerid=%s", safe_playerid)
-    local res = s.db:query(sql)
-    if db_failed(res) then
-        return false, "查询目标玩家失败"
-    end
-    if #res == 0 then
-        return false, "目标玩家不存在"
-    end
-    return true
-end
-
 --判断好友数和被申请数是否满
 local function check_target_capacity(f_num, p_num)
     if f_num >= 50 then
@@ -270,74 +228,164 @@ local function check_target_capacity(f_num, p_num)
     return true
 end
 
---数据库层：在数据库查询目标玩家的当前好友数和被申请数不满则插入
-function repo.insert_pending_atomic(target_id, from_id)
-    local safe_target = s.db.quote_sql_str(target_id)
+--数据库层，添加好友记录，如果已经有申请就自动接受
+function repo.add_or_accept_atomic(target_id, from_id)
+    local first_id, second_id = from_id, target_id
+    if tonumber(first_id) and tonumber(second_id) and tonumber(first_id) > tonumber(second_id) then
+        first_id, second_id = second_id, first_id
+    end
+
+    local safe_first = s.db.quote_sql_str(first_id)
+    local safe_second = s.db.quote_sql_str(second_id)
     local safe_from = s.db.quote_sql_str(from_id)
+    local safe_target = s.db.quote_sql_str(target_id)
     local tx, err = s.db:begin()
     if not tx then
         return false, err or "事务开启失败"
     end
-    --锁住需要的行
-    local target_rows = tx:query(
-        string.format(
-            "select friendid,status from friend where playerid=%s for update",
-            safe_target
-        )
+
+    --先锁玩家role_message里面的记录，这样即使friend里面没有记录，也能保证锁住两个玩家
+    local first_player = tx:query(
+        string.format("select playerid from role_message where playerid=%s for update", safe_first)
     )
-    if db_failed(target_rows) then
+    if db_failed(first_player) or #first_player == 0 then
+        tx:rollback()
+        return false, "查询玩家失败或玩家不存在"
+    end
+    local second_player = tx:query(
+        string.format("select playerid from role_message where playerid=%s for update", safe_second)
+    )
+    if db_failed(second_player) or #second_player == 0 then
+        tx:rollback()
+        return false, "玩家不存在"
+    end
+
+    local first_rows = tx:query(
+        string.format("select friendid,status from friend where playerid=%s for update", safe_first)
+    )
+    if db_failed(first_rows) then
         tx:rollback()
         return false, "查询失败"
     end
-    local target_fnum, target_pnum = 0, 0
+    local second_rows = tx:query(
+        string.format(
+            "select friendid,status from friend where playerid=%s for update",
+            safe_second
+        )
+    )
+    if db_failed(second_rows) then
+        tx:rollback()
+        return false, "查询失败"
+    end
+
+    local self_rows, target_rows
+    if first_id == from_id then
+        self_rows, target_rows = first_rows, second_rows
+    else
+        self_rows, target_rows = second_rows, first_rows
+    end
+
+    --需要统计自己的好友数，目标玩家的好友数，目标玩家的被申请数
+    --自己和目标玩家是否已经是好友
+    --自己是否向目标玩家发过加好友请求
+    --目标玩家是否向自己发过加好友请求
+    local self_fnum, target_fnum, target_pnum = 0, 0, 0
+    local already_friend = false
+    local has_incoming_pending = false
+    local has_outgoing_pending = false
+
+    for _, r in ipairs(self_rows) do
+        if r.status == 1 then
+            self_fnum = self_fnum + 1
+        end
+
+        if r.friendid == target_id and r.status == 0 then
+            has_incoming_pending = true
+        elseif r.friendid == target_id and r.status == 1 then
+            already_friend = true
+        end
+    end
     for _, r in ipairs(target_rows) do
         if r.status == 1 then
             target_fnum = target_fnum + 1
-        end
-        if r.status == 0 then
+        elseif r.status == 0 then
             target_pnum = target_pnum + 1
+        end
+
+        if r.friendid == from_id and r.status == 0 then
+            has_outgoing_pending = true
+        elseif r.friendid == from_id and r.status == 1 then
+            already_friend = true
         end
     end
 
-    local is_insertable, insertable_err = check_target_capacity(target_fnum, target_pnum)
-    if not is_insertable then
+    local function fail(msg)
         tx:rollback()
-        return false, insertable_err
+        return false, msg
     end
-    local sql = string.format(
-        "insert ignore into friend (playerid,friendid,status) values (%s,%s,%d) ",
-        safe_target,
-        safe_from,
-        0
+
+    if already_friend then
+        return fail("玩家已经是好友")
+    end
+
+    --对方申请过我，自动接受
+    if has_incoming_pending then
+        if self_fnum >= 50 then
+            return fail("好友已满")
+        end
+        if target_fnum >= 50 then
+            return fail("对方好友已满")
+        end
+        local sql = string.format(
+            "replace into friend (friendid,playerid,status) values (%s,%s,1),(%s,%s,1)",
+            safe_first,
+            safe_second,
+            safe_second,
+            safe_first
+        )
+        local res = tx:query(sql)
+        if db_failed(res) then
+            return fail("添加失败")
+        end
+        local c = tx:commit()
+        if db_failed(c) then
+            return fail("提交失败")
+        end
+        return true, "accepted"
+    end
+    --如果已经申请过
+    if has_outgoing_pending then
+        return fail("已经申请过该玩家")
+    end
+    --检查自己和对方好友数量是否满，对方申请数是否满
+    if self_fnum >= 50 then
+        return fail("数量已达上限,请删除部分好友")
+    end
+
+    local ok, cap_err = check_target_capacity(target_fnum, target_pnum)
+    if not ok then
+        return fail(cap_err)
+    end
+
+    local res = tx:query(
+        string.format(
+            "insert ignore into friend (playerid,friendid,status) values (%s,%s,0)",
+            safe_target,
+            safe_from
+        )
     )
-    local res = tx:query(sql)
     if db_failed(res) then
-        tx:rollback()
-        return false, "添加请求入库失败"
-    elseif res and res.affected_rows == 0 then
-        tx:rollback()
-        return false, "已经是好友，或者重复申请"
+        return fail("添加请求入库失败")
     end
+    if res.affected_rows == 0 then
+        return fail("已经是好友")
+    end
+
     local c = tx:commit()
     if db_failed(c) then
-        tx:rollback()
-        return false, "提交失败"
+        return fail("提交失败")
     end
-    return true
-end
---在线查询目标玩家的当前好友数和被申请数,作为预检查
-local function query_online_f_p_num(target_id)
-    local player = s.call(runconfig.agentmgr.node, "agentmgr", "get_player", target_id)
-    if player then
-        local isok, f_num, p_num = pcall(s.call, player.node, player.agent, "friends_num")
-        if isok and f_num and p_num then
-            local is_insertable, insertable_err = check_target_capacity(f_num, p_num)
-            if not is_insertable then --在线玩家说他满了，我们直接返回
-                return false, insertable_err
-            end
-        end
-    end
-    return true
+    return true, "pending"
 end
 
 --向目标玩家尝试通知好友事件
@@ -355,48 +403,25 @@ function s.client.friend_add(msg)
     if tid == s.id then
         return friend_add_fail("不能添加自己")
     end
-    if map_size(s.data.friends) >= 50 then
-        return friend_add_fail("数量已达上限,请删除部分好友")
-    end
 
-    --预检查，如果对方在线且回复满，则返回，省的查数据库，但是对方如果说不满，我们还要查数据库检查确保
-    local ok, insertable_err = query_online_f_p_num(tid)
-    if not ok then
-        return friend_add_fail(insertable_err)
-    end
-
-    --验证是否已经在好友列表
+    --粗筛，可以过滤内存已经同步了情况，避免每次都去数据库查询是否重复
     if s.data.friends[tid] then
-        return friend_add_fail("玩家已经是好友")
+        return friend_add_fail("已经是好友")
     end
-    --验证是否已经在申请列表
-    if s.data.friends_pending[tid] then --对方已经发来好友申请
-        s.data.friends[tid] = s.data.friends_pending[tid]
+
+    local ok, action_or_err = repo.add_or_accept_atomic(tid, s.id)
+    if not ok then
+        return friend_add_fail(action_or_err)
+    end
+    --如果是完成了自动添加，更新自己内存，并尝试通知对方更新缓存
+    if action_or_err == "accepted" then
+        s.data.friends[tid] = friend(tid)
         s.data.friends_pending[tid] = nil
-        --接受好友申请,持久化记录
-        local saved, err = repo.accept_pending_atomic(tid, s.id)
-        if not saved then
-            s.data.friends_pending[tid] = s.data.friends[tid]
-            s.data.friends[tid] = nil
-            return friend_add_fail(err)
-        end
-        --若目标在线。则通知其更新内存
         notify_if_online(tid, "friend_added", s.id)
         return friend_add_ok("添加成功")
     end
 
-    --查询目标玩家是否存在
-    local exists, exist_err = repo.target_exist(tid)
-    if not exists then
-        return friend_add_fail(exist_err)
-    end
-    --请求入库
-    local inserted, insert_err = repo.insert_pending_atomic(tid, s.id)
-    if not inserted then
-        return friend_add_fail(insert_err)
-    end
-
-    --若目标在线。则通知其更新内存
+    --如果完成了申请，则尝试通知对方更新内存
     notify_if_online(tid, "friend_add", s.id)
     return friend_add_ok("申请成功")
 end
@@ -487,12 +512,14 @@ end
 local function friend_accept_ok()
     return { "friend_accept", code = 0, msg = "接受成功" }
 end
---数据库层：检查数量并插入(原子操作)
+--数据库层：接受好友申请，检查数量并插入好友记录(原子操作)
 function repo.accept_pending_atomic(target_id, from_id)
     local first_id, second_id = from_id, target_id
     if tonumber(first_id) and tonumber(second_id) and tonumber(first_id) > tonumber(second_id) then
         first_id, second_id = second_id, first_id
-    end --按顺序加锁，防死锁（一方接受和另一方自动添加同时进行有可能死锁）
+    end
+    --按顺序加锁，防死锁
+
     local safe_first = s.db.quote_sql_str(first_id)
     local safe_second = s.db.quote_sql_str(second_id)
     local tx, err = s.db:begin()
@@ -500,6 +527,23 @@ function repo.accept_pending_atomic(target_id, from_id)
         return false, err or "事务开启失败"
     end
     --锁住需要的行
+
+    --先锁玩家role_message里面的记录，这样即使friend里面没有记录，也能保证锁住两个玩家
+    local first_player = tx:query(
+        string.format("select playerid from role_message where playerid=%s for update", safe_first)
+    )
+    if db_failed(first_player) or #first_player == 0 then
+        tx:rollback()
+        return false, "查询玩家失败或玩家不存在"
+    end
+    local second_player = tx:query(
+        string.format("select playerid from role_message where playerid=%s for update", safe_second)
+    )
+    if db_failed(second_player) or #second_player == 0 then
+        tx:rollback()
+        return false, "玩家不存在"
+    end
+
     local first_rows = tx:query(
         string.format("select friendid,status from friend where playerid=%s for update", safe_first)
     )
@@ -523,24 +567,34 @@ function repo.accept_pending_atomic(target_id, from_id)
     else
         self_rows, target_rows = second_rows, first_rows
     end
+    --记录是否存在申请记录，自己和对方的好友数
     local has_pending, self_fnum, target_fnum = false, 0, 0
+    local already_friend = false
     for _, r in ipairs(self_rows) do
         if r.status == 1 then
             self_fnum = self_fnum + 1
         end
         if r.friendid == target_id and r.status == 0 then
             has_pending = true
+        elseif r.friendid == target_id and r.status == 1 then
+            already_friend = true
         end
     end
     for _, r in ipairs(target_rows) do
         if r.status == 1 then
             target_fnum = target_fnum + 1
         end
+        if r.friendid == from_id and r.status == 1 then
+            already_friend = true
+        end
     end
 
     if not has_pending then
         tx:rollback()
         return false, "数据库不存在申请记录"
+    end
+    if already_friend then
+        return false, "已经是好友"
     end
     if self_fnum >= 50 then
         tx:rollback()
@@ -576,6 +630,7 @@ end
 --客户端请求接受好友
 function s.client.friend_accept(msg)
     local tid = msg.target_id
+    --粗筛
     if not s.data.friends_pending[tid] then
         return friend_accept_fail("申请表中不存在该玩家")
     end

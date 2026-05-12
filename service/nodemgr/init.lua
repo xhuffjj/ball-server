@@ -1,5 +1,5 @@
-local skynet = require "skynet"
-local s = require "service"
+local skynet = require("skynet")
+local s = require("service")
 
 function s.resp.newservice(source, ...)
     local srv = skynet.newservice(...)
@@ -7,14 +7,11 @@ function s.resp.newservice(source, ...)
 end
 
 function s.resp.abort(sourse)
-    skynet.fork(
-        function ()
-            skynet.sleep(10)
-            skynet.abort()
-        end
-    )
+    skynet.fork(function()
+        skynet.sleep(10)
+        skynet.abort()
+    end)
     return true
-    
 end
 
 s.start(...)

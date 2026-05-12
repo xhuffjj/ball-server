@@ -345,8 +345,8 @@ function repo.load_base_info()
     end
     return res
 end
-
-local REDIS_TTL = 7 * 24 * 3600
+--ttl至少要大于设定的定时刷入mysql的间隔，这里设定1小时
+local REDIS_TTL = 1 * 1 * 3600
 
 function s.init(login_version)
     s.login_version = login_version

@@ -1,9 +1,9 @@
-local skynet = require "skynet"
-local s = require "service"
-local mysql = require "skynet.db.mysql"
-local redis = require "skynet.db.redis"
-local pb = require "protobuf"
-local cjson = require "cjson"
+local skynet = require("skynet")
+local s = require("service")
+local mysql = require("skynet.db.mysql")
+local redis = require("skynet.db.redis")
+local pb = require("protobuf")
+local cjson = require("cjson")
 local db = nil
 local rds = nil
 
@@ -28,7 +28,8 @@ local function sync_player_base_info(playerid)
     end
     local safe_playerid = db.quote_sql_str(playerid)
     local safe_data = db.quote_sql_str(cached)
-    local sql = string.format("update role_message set data=%s where playerid=%s", safe_data, safe_playerid)
+    local sql =
+        string.format("update role_message set data=%s where playerid=%s", safe_data, safe_playerid)
     local res = db:query(sql)
     if db_failed(res) then
         skynet.error("[dbsync]向mysql同步base_data失败: playerid=" .. tostring(playerid))
@@ -38,14 +39,14 @@ local function sync_player_base_info(playerid)
     return true
 end
 
---同步指定玩家的mail
-
 --同步指定玩家的achieves
 local function sync_player_achieves(playerid)
     local redis_key = "player:" .. tostring(playerid) .. ":achieves"
     local cached = rds:hgetall(redis_key)
     if not cached or #cached == 0 then --缓存不存在
-        skynet.error("[dbsync] Redis 无achieves数据或为空，跳过playerid= " .. tostring(playerid))
+        skynet.error(
+            "[dbsync] Redis 无achieves数据或为空，跳过playerid= " .. tostring(playerid)
+        )
         return false
     end
     local achieves = {}
@@ -53,7 +54,12 @@ local function sync_player_achieves(playerid)
         local aid = cached[i]
         local ok, a = pcall(cjson.decode, cached[i + 1])
         if (not ok) or type(a) ~= "table" then
-            skynet.error("[dbsync] achieves解析失败: playerid=" .. tostring(playerid) .. " aid=" .. tostring(cached[i]))
+            skynet.error(
+                "[dbsync] achieves解析失败: playerid="
+                    .. tostring(playerid)
+                    .. " aid="
+                    .. tostring(cached[i])
+            )
             return false
         end
         achieves[aid] = a
@@ -67,10 +73,20 @@ local function sync_player_achieves(playerid)
         local safe_claim_time = ach.claim_time and db.quote_sql_str(ach.claim_time) or "NULL"
         local sql = string.format(
             "replace into achievement (playerid,achieve_id,progress,is_done,claim_time) value (%s,%s,%s,%s,%s)",
-            safe_playerid, safe_achieveid, safe_progress, safe_isdone, safe_claim_time)
+            safe_playerid,
+            safe_achieveid,
+            safe_progress,
+            safe_isdone,
+            safe_claim_time
+        )
         local res = db:query(sql)
         if db_failed(res) then
-            skynet.error("[dbsync]向mysql同步成就数据失败: playerid=" .. tostring(playerid) .. " aid=" .. tostring(aid))
+            skynet.error(
+                "[dbsync]向mysql同步成就数据失败: playerid="
+                    .. tostring(playerid)
+                    .. " aid="
+                    .. tostring(aid)
+            )
             return false
         end
     end
@@ -82,7 +98,9 @@ local function sync_player_bag(playerid)
     local redis_key = "player:" .. tostring(playerid) .. ":bag"
     local cached = rds:hgetall(redis_key)
     if not cached or #cached == 0 then --缓存不存在
-        skynet.error("[dbsync] Redis 无bag数据或为空，跳过playerid= " .. tostring(playerid))
+        skynet.error(
+            "[dbsync] Redis 无bag数据或为空，跳过playerid= " .. tostring(playerid)
+        )
         return false
     end
     local items = {}
@@ -90,22 +108,35 @@ local function sync_player_bag(playerid)
         local iid = cached[i]
         local ok, ite = pcall(cjson.decode, cached[i + 1])
         if (not ok) or type(ite) ~= "table" then
-            skynet.error("[dbsync] items解析失败: playerid=" .. tostring(playerid) .. " iid=" .. tostring(cached[i]))
+            skynet.error(
+                "[dbsync] items解析失败: playerid="
+                    .. tostring(playerid)
+                    .. " iid="
+                    .. tostring(cached[i])
+            )
             return false
         end
         items[iid] = ite
     end
 
     for iid, ite in pairs(items) do
-        local safe_playerid = s.db.quote_sql_str(s.id)
-        local safe_item_id = s.db.quote_sql_str(iid)
-        local safe_count = s.db.quote_sql_str(ite.count)
+        local safe_playerid = db.quote_sql_str(playerid)
+        local safe_item_id = db.quote_sql_str(iid)
+        local safe_count = db.quote_sql_str(ite.count)
         local sql = string.format(
             "replace into bag (playerid,item_id,count) value (%s,%s,%s)",
-            safe_playerid, safe_item_id, safe_count)
-        local res = s.db:query(sql)
+            safe_playerid,
+            safe_item_id,
+            safe_count
+        )
+        local res = db:query(sql)
         if db_failed(res) then
-            skynet.error("[dbsync]向mysql同步背包数据失败: playerid=" .. tostring(s.id) .. " item_id=" .. tostring(iid))
+            skynet.error(
+                "[dbsync]向mysql同步背包数据失败: playerid="
+                    .. tostring(s.id)
+                    .. " item_id="
+                    .. tostring(iid)
+            )
             return false
         end
     end
@@ -120,7 +151,7 @@ local function sync_all_base_info()
     local has_syncing = rds:exists("dirty:base_info:syncing")
     if not has_syncing then --没有则创建新快照
         local ok, err = pcall(rds.rename, rds, "dirty:base_info", "dirty:base_info:syncing")
-        if not ok then      --没有脏玩家会rename失败
+        if not ok then --没有脏玩家会rename失败
             return
         end
     end
@@ -139,7 +170,12 @@ local function sync_all_base_info()
     for _, pid in ipairs(dirty_ids) do
         local ok, synced = pcall(sync_player_base_info, pid)
         if not ok then
-            skynet.error("[dbsync] 同步base_info异常: playerid=" .. tostring(pid) .. " err=" .. tostring(synced))
+            skynet.error(
+                "[dbsync] 同步base_info异常: playerid="
+                    .. tostring(pid)
+                    .. " err="
+                    .. tostring(synced)
+            )
         elseif synced then --同步成功,移除该玩家
             rds:srem("dirty:base_info:syncing", tostring(pid))
         end
@@ -162,7 +198,7 @@ local function sync_all_achieves()
     local has_syncing = rds:exists("dirty:achieves:syncing")
     if not has_syncing then --没有则创建新快照
         local ok, err = pcall(rds.rename, rds, "dirty:achieves", "dirty:achieves:syncing")
-        if not ok then      --没有脏玩家会rename失败
+        if not ok then --没有脏玩家会rename失败
             return
         end
     end
@@ -179,7 +215,12 @@ local function sync_all_achieves()
     for _, pid in ipairs(dirty_ids) do
         local ok, synced = pcall(sync_player_achieves, pid) --pcall防止redis抛出lua错误
         if not ok then
-            skynet.error("[dbsync] 同步成就异常: playerid=" .. tostring(pid) .. " err=" .. tostring(synced))
+            skynet.error(
+                "[dbsync] 同步成就异常: playerid="
+                    .. tostring(pid)
+                    .. " err="
+                    .. tostring(synced)
+            )
         elseif synced then --同步成功,移除该玩家
             rds:srem("dirty:achieves:syncing", tostring(pid))
         end
@@ -200,7 +241,7 @@ local function sync_all_bag()
     local has_syncing = rds:exists("dirty:bag:syncing")
     if not has_syncing then --没有则创建新快照
         local ok, err = pcall(rds.rename, rds, "dirty:bag", "dirty:bag:syncing")
-        if not ok then      --没有脏玩家会rename失败
+        if not ok then --没有脏玩家会rename失败
             return
         end
     end
@@ -217,7 +258,12 @@ local function sync_all_bag()
     for _, pid in ipairs(dirty_ids) do
         local ok, synced = pcall(sync_player_bag, pid) --pcall防止redis抛出lua错误
         if not ok then
-            skynet.error("[dbsync] 同步背包异常: playerid=" .. tostring(pid) .. " err=" .. tostring(synced))
+            skynet.error(
+                "[dbsync] 同步背包异常: playerid="
+                    .. tostring(pid)
+                    .. " err="
+                    .. tostring(synced)
+            )
         elseif synced then --同步成功,移除该玩家
             rds:srem("dirty:bag:syncing", tostring(pid))
         end
@@ -233,12 +279,12 @@ local function sync_all_bag()
     rds:del("dirty:bag:syncing")
 end
 
-
 -------------------------------------------------------------------------------------------
 --定时器用，批量扫描脏集合并且同步
 local function sync_all_dirty()
     sync_all_base_info()
     sync_all_achieves()
+    sync_all_bag()
 end
 
 --接受agent的请求：立即同步指定玩家的所有脏数据
@@ -254,7 +300,10 @@ function s.resp.sync_player(sourse, playerid)
     if not ok then
         err = err .. "同步成就数据失败"
     end
-
+    ok = sync_player_bag(playerid)
+    if not ok then
+        err = err .. "同步bag数据失败"
+    end
     if err ~= "" then
         skynet.error("playerid: " .. playerid .. "请求立即同步数据出错：" .. err)
         return false
@@ -270,12 +319,12 @@ function s.init()
         user = "root",
         password = "123456",
         max_packet_size = 1024 * 1024, --最大接收包大小（1MB
-        on_connect = nil               --连接建立时的回调函数
+        on_connect = nil, --连接建立时的回调函数
     })
     rds = redis.connect({
         host = "192.168.164.129",
         port = 6379,
-        auth = "123456"
+        auth = "123456",
     })
     pb.register_file("./storage/GameData.pb")
     skynet.fork(function()

@@ -318,19 +318,19 @@ local function try_match(mode_id)
     if not cfg then
         return false
     end
-
-    --从活跃桶集合读取活跃桶号
-    local raw_segments = rds:smembers(active_segments_key(mode_id)) or {}
-    local segments = {}
-    for _, segment_id in ipairs(raw_segments) do
-        table.insert(segments, tonumber(segment_id))
-    end
-    table.sort(segments, function(a, b)
-        return tonumber(a) < tonumber(b)
-    end)
-    batch = {}
     --加协程锁,扫描玩家以及状态转移期间不处理leave和cancle和join
+    --从活跃桶集合读取活跃桶号
     local ok = state_lock(function()
+        local raw_segments = rds:smembers(active_segments_key(mode_id)) or {}
+        local segments = {}
+        for _, segment_id in ipairs(raw_segments) do
+            table.insert(segments, tonumber(segment_id))
+        end
+        table.sort(segments, function(a, b)
+            return tonumber(a) < tonumber(b)
+        end)
+        batch = {}
+
         --从低段位到高段位扫描,扫描出第一批玩家就停止
         for _, segment_id in ipairs(segments) do
             batch = collect_batch(mode_id, segment_id, cfg)
@@ -551,8 +551,8 @@ function s.init()
                         end
                     end
                 end
-                skynet.sleep(SCAN_INTERVAL)
             end
+            skynet.sleep(SCAN_INTERVAL)
         end
     end)
 end

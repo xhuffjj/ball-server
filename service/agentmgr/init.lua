@@ -169,7 +169,7 @@ function s.resp.shutdown(sourse, num)
     end
     skynet.sleep(200)
     local new_count = get_online_count()
-    skynet.error("shutdown online : " .. new_count)
+    skynet.error(" online number: " .. new_count)
 
     return new_count
 end

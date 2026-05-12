@@ -5,8 +5,8 @@ local cjson = require("cjson")
 local function db_failed(res)
     return (not res) or res.badresult or res.errno
 end
-
-local REDIS_TTL = 7 * 24 * 3600
+--ttl至少要大于设定的定时刷入mysql的间隔，这里设定1小时
+local REDIS_TTL = 1 * 1 * 3600
 
 local function item(item_id, count)
     local m = {

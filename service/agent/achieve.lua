@@ -1,7 +1,7 @@
 local skynet = require("skynet")
 local s = require("service")
 local cjson = require("cjson")
-local REDIS_TTL = 7 * 24 * 3600
+local REDIS_TTL = 1 * 1 * 3600
 --成就配置
 local ACHIEVE_CONFIG = require("achieve_config")
 
