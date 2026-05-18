@@ -3,6 +3,11 @@
 基于 Skynet 的球球大作战服务端项目，包含登录、网关、玩家 agent、匹配、房间、战斗网关、场景、背包、好友、邮件、成就、数据库同步等服务。
 
 Unity 测试客户端是ai写的，比较简陋，只用于演示服务器功能。
+## 演示视频
+
+点击观看/下载：
+
+[5.18.1 演示视频](https://github.com/xhuffjj/ball-server/releases/download/demo-video-2026-05-18/5.18.1.mp4)
 
 ## 运行环境
 
